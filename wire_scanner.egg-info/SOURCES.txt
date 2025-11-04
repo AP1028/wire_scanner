@@ -1,0 +1,6 @@
+pyproject.toml
+wire_scanner.egg-info/PKG-INFO
+wire_scanner.egg-info/SOURCES.txt
+wire_scanner.egg-info/dependency_links.txt
+wire_scanner.egg-info/requires.txt
+wire_scanner.egg-info/top_level.txt
