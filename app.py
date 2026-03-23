@@ -357,6 +357,7 @@ HTML_TEMPLATE = """
             <button onclick="startRecording()">Start Recording</button>
             <button onclick="stopRecording()">Stop Recording</button>
             <button onclick="downloadData()">Download Current CSV</button>
+            <button onclick="resetEncoderPos()">Reset Encoder Position</button>
             <span class="muted" id="currentFile"></span>
         </div>
 
@@ -484,6 +485,17 @@ HTML_TEMPLATE = """
 
         function downloadData() {
             window.location.href = '/download';
+        }
+
+        async function resetEncoderPos() {
+            try {
+                const res = await fetch('/reset', { method: 'POST' });
+                const msg = await res.json();
+                console.log(msg.message);
+            } catch (e) {
+                alert("Failed to reset position. Is the server running?");
+                console.error(e);
+            }
         }
     </script>
 </body>
