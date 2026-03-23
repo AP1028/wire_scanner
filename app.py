@@ -19,6 +19,7 @@ from pathlib import Path
 
 from Phidget22.PhidgetException import PhidgetException
 from Phidget22.Devices.Encoder import Encoder
+from Phidget22.Devices.DCMotor import DCMotor
 from Phidget22.Devices.Log import Log
 from Phidget22.LogLevel import LogLevel
 
@@ -76,6 +77,7 @@ class SensorDataLogger:
 
         # Devices
         self.encoder = None
+        self.motor = None
         self.serial_port: Optional[serial.Serial] = None
 
     # ---------- Recording ----------
@@ -222,6 +224,20 @@ def init_encoder():
         print(f"Failed to initialize encoder: {e}")
         return False
 
+# -----------------------------
+# Phidget motor
+# -----------------------------
+
+def init_motor():
+    try:
+        motor = DCMotor()
+        motor.openWaitForAttachment(5000)
+        logger.motor = motor
+        print("Motor initialized successfully")
+        return True
+    except PhidgetException as e:
+        print(f"Failed to initialize motor: {e}")
+        return False
 
 # -----------------------------
 # RS232 threads
@@ -358,6 +374,9 @@ HTML_TEMPLATE = """
             <button onclick="stopRecording()">Stop Recording</button>
             <button onclick="downloadData()">Download Current CSV</button>
             <button onclick="resetEncoderPos()">Reset Encoder Position</button>
+            <button onclick="motorForward()">Motor Forward</button>
+            <button onclick="motorStop()">Motor Stop</button>
+            <button onclick="motorReverse()">Motor Reverse</button>
             <span class="muted" id="currentFile"></span>
         </div>
 
@@ -487,16 +506,40 @@ HTML_TEMPLATE = """
             window.location.href = '/download';
         }
 
-        async function resetEncoderPos() {
+        // Motor testing function
+        async function motorForward() {
             try {
-                const res = await fetch('/reset', { method: 'POST' });
+                const res = await fetch('/motor_forward', { method: 'POST' });
                 const msg = await res.json();
                 console.log(msg.message);
             } catch (e) {
-                alert("Failed to reset position. Is the server running?");
+                alert("Failed to control motor. Is the server running?");
                 console.error(e);
             }
         }
+
+        async function motorReverse() {
+            try {
+                const res = await fetch('/motor_reverse', { method: 'POST' });
+                const msg = await res.json();
+                console.log(msg.message);
+            } catch (e) {
+                alert("Failed to control motor. Is the server running?");
+                console.error(e);
+            }
+        }
+
+        async function motorStop() {
+            try {
+                const res = await fetch('/motor_stop', { method: 'POST' });
+                const msg = await res.json();
+                console.log(msg.message);
+            } catch (e) {
+                alert("Failed to control motor. Is the server running?");
+                console.error(e);
+            }
+        }
+
     </script>
 </body>
 </html>
@@ -554,6 +597,36 @@ def download_csv():
         return send_file(str(legacy), as_attachment=True)
     return jsonify({"message": "No recording file available yet."}), 404
 
+# Motor Testing Functions
+@app.route('/motor_stop', methods=['POST'])
+def motor_stop():
+    if logger.motor:
+        try:
+            logger.motor.setTargetVelocity(0)
+            return jsonify({'message': 'Motor stop successfully'})
+        except Exception as e:
+            return jsonify({'message': f'Motor stop failed: {e}'}), 500
+    return jsonify({'message': 'Motor not connected'}), 400
+
+@app.route('/motor_forward', methods=['POST'])
+def motor_forward():
+    if logger.motor:
+        try:
+            logger.motor.setTargetVelocity(0.5)
+            return jsonify({'message': 'Motor run forward successfully'})
+        except Exception as e:
+            return jsonify({'message': f'Motor run forward failed: {e}'}), 500
+    return jsonify({'message': 'Motor not connected'}), 400
+
+@app.route('/motor_reverse', methods=['POST'])
+def motor_reverse():
+    if logger.motor:
+        try:
+            logger.motor.setTargetVelocity(-0.5)
+            return jsonify({'message': 'Motor reverse successfully'})
+        except Exception as e:
+            return jsonify({'message': f'Motor reverse failed: {e}'}), 500
+    return jsonify({'message': 'Motor not connected'}), 400
 
 def main():
     print("Starting Sensor Data Logger...")
@@ -563,6 +636,9 @@ def main():
     # Initialize encoder (non-fatal if not present)
     if not init_encoder():
         print("Warning: Encoder not initialized. Continuing without encoder.")
+    
+    if not init_motor():
+        print("Warning: Motor not initialized. Continuing without motor.")
 
     # Start RS232 polling thread (active command-write + read + parse)
     rs232_thread = threading.Thread(target=rs232_polling_thread, daemon=True)
