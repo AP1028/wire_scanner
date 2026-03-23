@@ -33,7 +33,14 @@ MAX_DATA_POINTS = 1000        # Keep last N readings in memory
 DEFAULT_LOG_DIR = Path("logs") # NEW: folder to keep recordings
 DEFAULT_BASE_FILENAME = "sensor_data"  # NEW
 
-SERIAL_PORT = "/dev/ttyUSB0"          # Adjust for your RS232 port (e.g., /dev/ttyUSB0 on Linux)
+# SERIAL_PORT = "/dev/ttyUSB0"          # Adjust for your RS232 port (e.g., /dev/ttyUSB0 on Linux)
+
+if platform.system() == "Windows":
+    SERIAL_PORT = "COM7"
+else:
+    # Default to Linux (and Mac)
+    SERIAL_PORT = "/dev/ttyUSB0"
+
 SERIAL_BAUD = 115200
 RS232_COMMAND = "MA,0\r"      # NEW: command to request "ALL outputs"
 RS232_POLL_PERIOD_S = 0.5     # NEW: every 500 ms as in your PowerShell loop
