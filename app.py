@@ -507,6 +507,18 @@ HTML_TEMPLATE = """
             window.location.href = '/download';
         }
 
+        // encoder reset
+        async function resetEncoderPos() {
+            try {
+                const res = await fetch('/reset', { method: 'POST' });
+                const msg = await res.json();
+                console.log(msg.message);
+            } catch (e) {
+                alert("Failed to reset position. Is the server running?");
+                console.error(e);
+            }
+        }
+
         // Motor testing function
         async function motorForward() {
             try {
