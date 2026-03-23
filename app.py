@@ -33,12 +33,10 @@ import platform
 ENCODER_RESOLUTION_UM = 10    # micrometers per pulse
 MAX_DATA_POINTS = 1000        # Keep last N readings in memory
 DEFAULT_LOG_DIR = Path("logs") # NEW: folder to keep recordings
-DEFAULT_BASE_FILENAME = "sensor_data"  # NEW
-
-# SERIAL_PORT = "/dev/ttyUSB0"          # Adjust for your RS232 port (e.g., /dev/ttyUSB0 on Linux)
+DEFAULT_BASE_FILENAME = "sensor_data"  # NEW      
 
 if platform.system() == "Windows":
-    SERIAL_PORT = "COM7"
+    SERIAL_PORT = "COM7" # Adjust for your RS232 port
 else:
     # Default to Linux (and Mac)
     SERIAL_PORT = "/dev/ttyUSB0"
@@ -49,6 +47,9 @@ RS232_POLL_PERIOD_S = 0.5     # NEW: every 500 ms as in your PowerShell loop
 RS232_POST_COMMAND_DELAY_S = 0.10  # NEW: give device ~100 ms to reply
 
 LOG_SAMPLING_HZ = 10          # NEW: logging rate while recording (10 Hz)
+
+MOTOR_SPEED = 0.5 # Default duty cycle of the motor
+
 # -----------------------------
 
 
@@ -612,7 +613,7 @@ def motor_stop():
 def motor_forward():
     if logger.motor:
         try:
-            logger.motor.setTargetVelocity(0.5)
+            logger.motor.setTargetVelocity(MOTOR_SPEED)
             return jsonify({'message': 'Motor run forward successfully'})
         except Exception as e:
             return jsonify({'message': f'Motor run forward failed: {e}'}), 500
@@ -622,7 +623,7 @@ def motor_forward():
 def motor_reverse():
     if logger.motor:
         try:
-            logger.motor.setTargetVelocity(-0.5)
+            logger.motor.setTargetVelocity(-1*MOTOR_SPEED)
             return jsonify({'message': 'Motor reverse successfully'})
         except Exception as e:
             return jsonify({'message': f'Motor reverse failed: {e}'}), 500
