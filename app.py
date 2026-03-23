@@ -34,7 +34,7 @@ DEFAULT_LOG_DIR = Path("logs") # NEW: folder to keep recordings
 DEFAULT_BASE_FILENAME = "sensor_data"  # NEW
 
 SERIAL_PORT = "COM3"          # Adjust for your RS232 port (e.g., /dev/ttyUSB0 on Linux)
-SERIAL_BAUD = 9600
+SERIAL_BAUD = 115200
 RS232_COMMAND = "MA,0\r"      # NEW: command to request "ALL outputs"
 RS232_POLL_PERIOD_S = 0.5     # NEW: every 500 ms as in your PowerShell loop
 RS232_POST_COMMAND_DELAY_S = 0.10  # NEW: give device ~100 ms to reply
