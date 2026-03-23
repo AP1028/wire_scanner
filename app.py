@@ -24,6 +24,7 @@ from Phidget22.LogLevel import LogLevel
 
 from flask import Flask, render_template_string, jsonify, request, send_file
 
+import platform
 
 # -----------------------------
 # Configuration
