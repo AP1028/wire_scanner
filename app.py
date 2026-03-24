@@ -44,14 +44,21 @@ else:
 SERIAL_BAUD = 115200
 RS232_COMMAND = "MA,0\r"      # NEW: command to request "ALL outputs"
 RS232_POLL_PERIOD_S = 0.5     # NEW: every 500 ms as in your PowerShell loop
-RS232_POST_COMMAND_DELAY_S = 0.10  # NEW: give device ~100 ms to reply
+RS232_POST_COMMAND_DELAY_S = 0.15  # NEW: give device ~100 ms to reply
 
 LOG_SAMPLING_HZ = 10          # NEW: logging rate while recording (10 Hz)
 
-MOTOR_SPEED = 0.5 # Default duty cycle of the motor
+MOTOR_SPEED = -0.1 # Default duty cycle of the motor
+
+ENCODER_PROTECTION_LIMIT = 16000 # Far limit for motor for tripping the protection
+
+ENCODER_SCAN_POSITION = 15000 # Where the encoder should be at when finishing a round of scan
+
 
 # -----------------------------
-
+FORWARD = 1
+REVERSE = -1
+STOP = 0
 
 # Thread-safe data storage
 class SensorDataLogger:
@@ -79,6 +86,7 @@ class SensorDataLogger:
         # Devices
         self.encoder = None
         self.motor = None
+        self.motor_dir = STOP
         self.serial_port: Optional[serial.Serial] = None
 
     # ---------- Recording ----------
@@ -240,10 +248,24 @@ def init_motor():
         print(f"Failed to initialize motor: {e}")
         return False
 
+def motor_protection_thread():
+    while logger.running:
+        if logger.motor:
+            if (logger.encoder_position > ENCODER_PROTECTION_LIMIT and logger.motor_dir == FORWARD) or (logger.encoder_position <= -5 and logger.motor_dir == REVERSE):
+                print('Motor stop due to hitting limit')
+                try:
+                    logger.motor.setTargetVelocity(0)
+                    logger.motor_dir = STOP
+                    print('Motor stop successfully')
+                except Exception as e:
+                    print('Motor stop failed')
+                
+
 # -----------------------------
 # RS232 threads
 # -----------------------------
 def parse_ma_line(line: str) -> List[Optional[float]]:
+
     """
     Parse a line like: "MA,12.3,45.6,78.9"
     Returns [out1, out2, out3]; gracefully handles missing or non-numeric fields.
@@ -484,7 +506,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        setInterval(refresh, 100);
+        setInterval(refresh, 250);
 
         async function startRecording() {
             const fname = document.getElementById('filename').value || '';
@@ -614,30 +636,39 @@ def download_csv():
 @app.route('/motor_stop', methods=['POST'])
 def motor_stop():
     if logger.motor:
+        old_motor_dir = logger.motor_dir
         try:
             logger.motor.setTargetVelocity(0)
+            logger.motor_dir = STOP
             return jsonify({'message': 'Motor stop successfully'})
         except Exception as e:
+            logger.motor_dir = old_motor_dir
             return jsonify({'message': f'Motor stop failed: {e}'}), 500
     return jsonify({'message': 'Motor not connected'}), 400
 
 @app.route('/motor_forward', methods=['POST'])
 def motor_forward():
     if logger.motor:
+        old_motor_dir = logger.motor_dir
         try:
             logger.motor.setTargetVelocity(MOTOR_SPEED)
+            logger.motor_dir = FORWARD
             return jsonify({'message': 'Motor run forward successfully'})
         except Exception as e:
+            logger.motor_dir = old_motor_dir
             return jsonify({'message': f'Motor run forward failed: {e}'}), 500
     return jsonify({'message': 'Motor not connected'}), 400
 
 @app.route('/motor_reverse', methods=['POST'])
 def motor_reverse():
     if logger.motor:
+        old_motor_dir = logger.motor_dir
         try:
             logger.motor.setTargetVelocity(-1*MOTOR_SPEED)
+            logger.motor_dir = REVERSE
             return jsonify({'message': 'Motor reverse successfully'})
         except Exception as e:
+            logger.motor_dir = old_motor_dir
             return jsonify({'message': f'Motor reverse failed: {e}'}), 500
     return jsonify({'message': 'Motor not connected'}), 400
 
@@ -660,6 +691,9 @@ def main():
     # Start steady logging thread (writes when recording=True)
     log_thread = threading.Thread(target=logging_thread, daemon=True)
     log_thread.start()
+
+    motor_thread = threading.Thread(target=motor_protection_thread,daemon=True)
+    motor_thread.start()
 
     # Start web server
     print("\n" + "="*50)
