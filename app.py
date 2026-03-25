@@ -48,7 +48,7 @@ RS232_POST_COMMAND_DELAY_S = 0.15  # NEW: give device ~100 ms to reply
 
 LOG_SAMPLING_HZ = 10          # NEW: logging rate while recording (10 Hz)
 
-MOTOR_SPEED = -0.1 # Default duty cycle of the motor
+MOTOR_SPEED = -0.2 # Default duty cycle of the motor
 
 ENCODER_PROTECTION_LIMIT = 16000 # Far limit for motor for tripping the protection
 
@@ -56,8 +56,8 @@ ENCODER_SCAN_POSITION = 15000 # Where the encoder should be at when finishing a 
 
 
 # -----------------------------
-FORWARD = 1
-REVERSE = -1
+FORWARD = 1 # away from encoder
+REVERSE = -1 # to the encoder
 STOP = 0
 
 # Thread-safe data storage
@@ -82,6 +82,10 @@ class SensorDataLogger:
         self.positions = deque(maxlen=MAX_DATA_POINTS)
         self.velocities = deque(maxlen=MAX_DATA_POINTS)
         self.rs232_values = deque(maxlen=MAX_DATA_POINTS)  # keep raw or e.g., OUT1
+
+        # need acceleration as well
+        self.encoder_acceleration_mm_s_2 = 0.0
+        self.accelerations = deque(maxlen=MAX_DATA_POINTS)
 
         # Devices
         self.encoder = None
@@ -138,18 +142,27 @@ class SensorDataLogger:
             self.log_file.flush()
 
     # ---------- Updates ----------
-    def update_encoder(self, position, velocity_mm_s: float):
+    def update_encoder(self, position, velocity_mm_s: float, time_change: float):
         """Thread-safe encoder update"""
         with self.lock:
             self.encoder_position = position
             self.encoder_velocity_mm_s = velocity_mm_s
             self.last_update = time.time()
 
+            # Calculate acceleration
+            if self.velocities:
+                self.encoder_acceleration_mm_s_2 = (velocity_mm_s-self.velocities[-1])/time_change
+            else:
+                self.encoder_acceleration_mm_s_2 = 0
+
             # Add to history
             self.timestamps.append(time.time())
             length_mm = (position * ENCODER_RESOLUTION_UM) / 1000.0
             self.positions.append(length_mm)
             self.velocities.append(velocity_mm_s)
+
+            # Add acceleration to history
+            self.accelerations.append(self.encoder_acceleration_mm_s_2)
 
     def update_rs232(self, raw_line: str, outs: List[Optional[float]]):
         """Thread-safe RS232 update"""
@@ -184,7 +197,9 @@ class SensorDataLogger:
                 'timestamps': list(self.timestamps),
                 'positions': list(self.positions),
                 'velocities': list(self.velocities),
-                'rs232_values': list(self.rs232_values)
+                'rs232_values': list(self.rs232_values),
+                # add acceleration
+                'accelerations': list(self.accelerations)
             }
 
 
@@ -199,10 +214,11 @@ def on_encoder_position_change(self, positionChange, timeChange, indexTriggered)
     # timeChange is in milliseconds; velocity in mm/s:
     # mm/s = positionChange * (um/pulse) / timeChange(ms)
     velocity_mm_s = 0.0
+    acceleration_mm_s_2 = 0.0
     if timeChange > 0:
         velocity_mm_s = (positionChange * ENCODER_RESOLUTION_UM) / timeChange  # CHANGED (units fixed)
     position = self.getPosition()
-    logger.update_encoder(position, velocity_mm_s)
+    logger.update_encoder(position, velocity_mm_s, timeChange)
 
 def on_encoder_attach(self):
     logger.set_encoder_attached(True)
@@ -251,7 +267,7 @@ def init_motor():
 def motor_protection_thread():
     while logger.running:
         if logger.motor:
-            if (logger.encoder_position > ENCODER_PROTECTION_LIMIT and logger.motor_dir == FORWARD) or (logger.encoder_position <= -5 and logger.motor_dir == REVERSE):
+            if (logger.encoder_position > ENCODER_PROTECTION_LIMIT and logger.motor_dir == FORWARD) or (logger.encoder_position <= 0 and logger.motor_dir == REVERSE):
                 print('Motor stop due to hitting limit')
                 try:
                     logger.motor.setTargetVelocity(0)
@@ -458,6 +474,12 @@ HTML_TEMPLATE = """
             line: {color: '#e74c3c'}
         }], { title: 'Velocity History', xaxis: {title: 'Sample'}, yaxis: {title: 'Velocity (mm/s)'} });
 
+        Plotly.newPlot('acceleration-chart', [{
+            y: [],
+            type: 'scatter', mode: 'lines', name: 'Acceleration (mm/s^2)',
+            line: {color: '#e74c3c'}
+        }], { title: 'Acceleration History', xaxis: {title: 'Sample'}, yaxis: {title: 'Acceleration (mm/s^2)'} });
+
         async function refresh() {
             try {
                 const [dataRes, histRes, recRes] = await Promise.all([
@@ -501,6 +523,8 @@ HTML_TEMPLATE = """
                 // Charts
                 Plotly.update('position-chart', {y: [hist.positions]}, {}, [0]);
                 Plotly.update('velocity-chart', {y: [hist.velocities]}, {}, [0]);
+                // chart for acceleration
+                Plotly.update('acceleration-chart', {y: [hist.accelerations]}, {}, [0]);
             } catch (e) {
                 console.error(e);
             }
@@ -714,6 +738,8 @@ def main():
         logger.running = False
         if logger.encoder:
             logger.encoder.close()
+        if logger.motor:
+            logger.motor.close()
         if logger.serial_port:
             try:
                 logger.serial_port.close()
