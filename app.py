@@ -54,6 +54,7 @@ ENCODER_PROTECTION_LIMIT = 16000 # Far limit for motor for tripping the protecti
 
 ENCODER_SCAN_POSITION = 15000 # Where the encoder should be at when finishing a round of scan
 
+ACCEL_EMA_ALPHA = 0.5 # acceleration moving average smoother
 
 # -----------------------------
 FORWARD = 1 # away from encoder
@@ -104,7 +105,7 @@ class SensorDataLogger:
             self.log_file = open(self.current_log_path, 'a', newline='')
             # CSV header
             self.log_file.write(
-                "timestamp,encoder_position,encoder_velocity_mm_s,length_mm,"
+                "timestamp,encoder_position,encoder_velocity_mm_s,encoder_acceleration_mm_s_2,length_mm,"
                 "rs232_out1,rs232_out2,rs232_out3,rs232_raw\n"
             )
             self.log_file.flush()
@@ -136,7 +137,7 @@ class SensorDataLogger:
             out2 = "" if self.rs232_outs[1] is None else self.rs232_outs[1]
             out3 = "" if self.rs232_outs[2] is None else self.rs232_outs[2]
             self.log_file.write(
-                f"{timestamp},{self.encoder_position},{self.encoder_velocity_mm_s:.6f},{length_mm:.6f},"
+                f"{timestamp},{self.encoder_position},{self.encoder_velocity_mm_s:.6f},{self.encoder_acceleration_mm_s_2:.6f},{length_mm:.6f},"
                 f"{out1},{out2},{out3},{self.rs232_raw}\n"
             )
             self.log_file.flush()
@@ -150,8 +151,12 @@ class SensorDataLogger:
             self.last_update = time.time()
 
             # Calculate acceleration
-            if self.velocities:
-                self.encoder_acceleration_mm_s_2 = (velocity_mm_s-self.velocities[-1])/(time_change/1000)
+            if self.velocities and time_change > 0:
+                raw_accel = (velocity_mm_s-self.velocities[-1])/(time_change/1000)
+                self.encoder_acceleration_mm_s_2 = (
+                    ACCEL_EMA_ALPHA * raw_accel +
+                    (1 - ACCEL_EMA_ALPHA) * self.encoder_acceleration_mm_s_2
+                )
             else:
                 self.encoder_acceleration_mm_s_2 = 0
 
