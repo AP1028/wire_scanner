@@ -151,7 +151,7 @@ class SensorDataLogger:
 
             # Calculate acceleration
             if self.velocities:
-                self.encoder_acceleration_mm_s_2 = (velocity_mm_s-self.velocities[-1])/time_change
+                self.encoder_acceleration_mm_s_2 = (velocity_mm_s-self.velocities[-1])/(time_change/1000)
             else:
                 self.encoder_acceleration_mm_s_2 = 0
 
@@ -275,6 +275,7 @@ def motor_protection_thread():
                     print('Motor stop successfully')
                 except Exception as e:
                     print('Motor stop failed')
+        time.sleep(0.05)
                 
 
 # -----------------------------
@@ -456,6 +457,9 @@ HTML_TEMPLATE = """
             </div>
             <div class="panel">
                 <div id="velocity-chart"></div>
+            </div>
+            <div class="panel">
+                <div id="acceleration-chart"></div>
             </div>
         </div>
     </div>

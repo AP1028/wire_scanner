@@ -2,3 +2,4 @@ logs/
 *.log
 wire_scanner.egg-info/
 .vscode/
+*.csv
