@@ -96,7 +96,7 @@ class SensorDataLogger:
         self.positions = deque(maxlen=MAX_DATA_POINTS)
         self.velocities = deque(maxlen=MAX_DATA_POINTS)
         self.rs232_values = deque(maxlen=MAX_DATA_POINTS)  # keep raw or e.g., OUT1
-        self.position_changes = deque(maxlen=MAX_DATA_POINTS)
+        self.position_change_que = deque(maxlen=MAX_DATA_POINTS)
 
         # need acceleration as well
         self.encoder_acceleration_mm_s_2 = 0.0
@@ -123,7 +123,7 @@ class SensorDataLogger:
             self.log_file = open(self.current_log_path, 'a', newline='')
             # CSV header
             self.log_file.write(
-                "timestamp,encoder_position,encoder_velocity_mm_s,position_changes,encoder_acceleration_mm_s_2,length_mm,"
+                "timestamp,encoder_position,encoder_velocity_mm_s,position_change_que,encoder_acceleration_mm_s_2,length_mm,"
                 "rs232_out1,rs232_out2,rs232_out3,rs232_raw\n"
             )
             self.log_file.flush()
@@ -184,7 +184,7 @@ class SensorDataLogger:
             length_mm = (position * ENCODER_RESOLUTION_UM) / 1000.0
             self.positions.append(length_mm)
             self.velocities.append(velocity_mm_s)
-            self.position_changes.append(self.position_change)
+            self.position_change_que.append(self.position_change)
 
             # Add acceleration to history
             self.accelerations.append(self.encoder_acceleration_mm_s_2)
@@ -342,13 +342,18 @@ def motor_speed_control_thread(direction,stop_event):
         cnt = 0
         total_pos_change = 0
         # iterate over, find all data between two cycles, find speed
-        for i in range(len(logger.timestamps)-1, -1, -1):
-            if current_time > logger.timestamps[i]:
-                cnt+=1
-                total_pos_change += logger.position_change[i]
-            else:
-                break
-        speed = total_pos_change/cnt
+        with logger.lock:
+            for i in range(len(logger.timestamps)-1, -1, -1):
+                if last_time < logger.timestamps[i]:
+                    cnt+=1
+                    total_pos_change += logger.position_change_que[i]
+                else:
+                    break
+        # get speed
+        if cnt>0:
+            speed = total_pos_change/cnt
+        else:
+            speed = 0.0
         # now we have speed, do a PID
         e = direction * MOTOR_SPEED_TARGET - speed
         p = P_COEFF * e
@@ -357,25 +362,28 @@ def motor_speed_control_thread(direction,stop_event):
         offset = direction*MOTOR_VOLTAGE_OFFSET
 
         voltage = p+i+d+offset
+
+        # safety bounding
+        voltage = max(-1.0, min(1.0, voltage))
         set_motor_speed(voltage)
 
         # post process
         last_e = e
         i_sum += e
-        if abs(i_sum)>I_LIMIT:
-            i_sum = 0
+        if i_sum > I_LIMIT:
+            i_sum = I_LIMIT
+        elif i_sum < -I_LIMIT:
+            i_sum = -I_LIMIT
 
         # logging
         with open('PID_log.csv', 'a') as file:
             print(f"{current_time},{p},{i},{d},{offset},{voltage}", file=file)
 
-        last_time = time.time()
+        last_time = current_time
         stop_event.wait(MOTOR_CONTROL_CYCLE)
     
     print('stopping thread')
     set_motor_speed(0)
-
-                
 
 # -----------------------------
 # RS232 threads
@@ -789,7 +797,7 @@ def motor_stop():
     if logger.motor:
         old_motor_dir = logger.motor_dir
         try:
-            if logger.motor_control_thread:
+            if logger.motor_control_thread and logger.motor_control_thread.is_alive():
                 logger.motor_control_stop_event.set()
                 logger.motor_control_thread.join()
             set_motor_speed(0)
@@ -819,6 +827,8 @@ def motor_forward_thread():
                 logger.motor_control_stop_event.set()
                 logger.motor_control_thread.join()
             logger.motor_control_thread = threading.Thread(target=motor_speed_control_thread, args=(FORWARD,logger.motor_control_stop_event))
+            logger.motor_control_stop_event.clear()
+            logger.motor_control_thread.start()
             return jsonify({'message': 'Motor run forward successfully'})
         except Exception as e:
             return jsonify({'message': f'Motor run forward failed: {e}'}), 500
@@ -845,6 +855,8 @@ def motor_reverse_thread():
                 logger.motor_control_stop_event.set()
                 logger.motor_control_thread.join()
             logger.motor_control_thread = threading.Thread(target=motor_speed_control_thread, args=(REVERSE,logger.motor_control_stop_event))
+            logger.motor_control_stop_event.clear()
+            logger.motor_control_thread.start()
             return jsonify({'message': 'Motor reverse successfully'})
         except Exception as e:
             logger.motor_dir = old_motor_dir
