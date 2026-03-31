@@ -43,18 +43,21 @@ else:
 
 SERIAL_BAUD = 115200
 RS232_COMMAND = "MA,0\r"      # NEW: command to request "ALL outputs"
-RS232_POLL_PERIOD_S = 0.5     # NEW: every 500 ms as in your PowerShell loop
-RS232_POST_COMMAND_DELAY_S = 0.15  # NEW: give device ~100 ms to reply
+RS232_POLL_PERIOD_S = 0.0005     # NEW: every 500 ms as in your PowerShell loop
+RS232_POST_COMMAND_DELAY_S = 0.0005  # NEW: give device ~100 ms to reply
 
 LOG_SAMPLING_HZ = 10          # NEW: logging rate while recording (10 Hz)
 
-MOTOR_SPEED = -0.2 # Default duty cycle of the motor
+MOTOR_SPEED = 0.1 # Default duty cycle of the motor
+MOTOR_DIR = -1 # Flip to make the motor go reverse
 
-ENCODER_PROTECTION_LIMIT = 16000 # Far limit for motor for tripping the protection
-
-ENCODER_SCAN_POSITION = 15000 # Where the encoder should be at when finishing a round of scan
+ENCODER_PROTECTION_LIMIT = 3000 # Far limit for motor for tripping the protection
+ENCODER_SCAN_POSITION = 3000 # Where the encoder should be at when finishing a round of scan
 
 ACCEL_EMA_ALPHA = 0.5 # acceleration moving average smoother
+
+# Motor control conf
+MOTOR_CONTROL_CYCLE = 0.1   # motor control period, in seconds
 
 # -----------------------------
 FORWARD = 1 # away from encoder
@@ -93,6 +96,9 @@ class SensorDataLogger:
         self.motor = None
         self.motor_dir = STOP
         self.serial_port: Optional[serial.Serial] = None
+
+        # Stored thread
+        self.motor_control_thread = None
 
     # ---------- Recording ----------
     def start_recording(self, base_filename: str):
@@ -241,12 +247,23 @@ def init_encoder():
     try:
         Log.enable(LogLevel.PHIDGET_LOG_INFO, "sensor_logger.log")
         encoder = Encoder()
-        encoder.setChannel(0)
+
+        # --- VINT HUB SPECIFIC ADDRESSING ---
+        encoder.setHubPort(0)               # You plugged it into Hub Port 0
+        encoder.setIsHubPortDevice(False)   # ENC1001 is a VINT device, not a raw hub port
+        encoder.setChannel(0)               # The encoder channel on the ENC1001
+        # ------------------------------------
+
         encoder.setOnPositionChangeHandler(on_encoder_position_change)
         encoder.setOnAttachHandler(on_encoder_attach)
         encoder.setOnDetachHandler(on_encoder_detach)
         encoder.setOnErrorHandler(on_encoder_error)
         encoder.openWaitForAttachment(5000)
+
+        min_interval = encoder.getMinDataInterval()
+        print(f"encoder min interval: {min_interval}")
+        encoder.setDataInterval(min_interval)
+
         logger.encoder = encoder
         print("Encoder initialized successfully")
         return True
@@ -262,11 +279,25 @@ def init_motor():
     try:
         motor = DCMotor()
         motor.openWaitForAttachment(5000)
+        min_interval = motor.getMinDataInterval()
+        print(f"motor min_interval: {min_interval}")
+        motor.setDataInterval(min_interval)
         logger.motor = motor
         print("Motor initialized successfully")
         return True
     except PhidgetException as e:
         print(f"Failed to initialize motor: {e}")
+        return False
+
+def set_motor_speed(speed):
+    speed_dir = (speed > 0) - (speed < 0)
+    speed_real = speed*MOTOR_DIR
+    try:
+        logger.motor.setTargetVelocity(speed_real)
+        logger.motor_dir = speed_dir
+        return True
+    except Exception as e:
+        print('Motor set speed failed')
         return False
 
 def motor_protection_thread():
@@ -275,12 +306,16 @@ def motor_protection_thread():
             if (logger.encoder_position > ENCODER_PROTECTION_LIMIT and logger.motor_dir == FORWARD) or (logger.encoder_position <= 0 and logger.motor_dir == REVERSE):
                 print('Motor stop due to hitting limit')
                 try:
-                    logger.motor.setTargetVelocity(0)
-                    logger.motor_dir = STOP
+                    set_motor_speed(0)
                     print('Motor stop successfully')
                 except Exception as e:
                     print('Motor stop failed')
-        time.sleep(0.05)
+        time.sleep(0.1)
+
+def motor_speed_control_thread(stop_event):
+
+    while logger.running and not stop_event.is_set():
+        stop_event.wait(0.1)
                 
 
 # -----------------------------
@@ -671,8 +706,7 @@ def motor_stop():
     if logger.motor:
         old_motor_dir = logger.motor_dir
         try:
-            logger.motor.setTargetVelocity(0)
-            logger.motor_dir = STOP
+            set_motor_speed(0)
             return jsonify({'message': 'Motor stop successfully'})
         except Exception as e:
             logger.motor_dir = old_motor_dir
@@ -684,8 +718,7 @@ def motor_forward():
     if logger.motor:
         old_motor_dir = logger.motor_dir
         try:
-            logger.motor.setTargetVelocity(MOTOR_SPEED)
-            logger.motor_dir = FORWARD
+            set_motor_speed(MOTOR_SPEED)
             return jsonify({'message': 'Motor run forward successfully'})
         except Exception as e:
             logger.motor_dir = old_motor_dir
@@ -697,8 +730,7 @@ def motor_reverse():
     if logger.motor:
         old_motor_dir = logger.motor_dir
         try:
-            logger.motor.setTargetVelocity(-1*MOTOR_SPEED)
-            logger.motor_dir = REVERSE
+            set_motor_speed(-1*MOTOR_SPEED)
             return jsonify({'message': 'Motor reverse successfully'})
         except Exception as e:
             logger.motor_dir = old_motor_dir
