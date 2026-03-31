@@ -61,7 +61,7 @@ P_COEFF = 0.01
 I_COEFF = 0.01
 D_COEFF = 0.01
 
-I_LIMIT = 0.1
+I_LIMIT = 3
 
 ENCODER_PROTECTION_LIMIT = 3000 # Far limit for motor for tripping the protection
 ENCODER_SCAN_POSITION = 3000 # Where the encoder should be at when finishing a round of scan
@@ -377,7 +377,7 @@ def motor_speed_control_thread(direction,stop_event):
 
         # logging
         with open('PID_log.csv', 'a') as file:
-            print(f"{current_time},{p},{i},{d},{offset},{voltage}", file=file)
+            print(f"{current_time},{p},{i},{d},{offset},{voltage},{speed},{e},", file=file)
 
         last_time = current_time
         stop_event.wait(MOTOR_CONTROL_CYCLE)
