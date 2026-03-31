@@ -31,7 +31,7 @@ import platform
 # Configuration
 # -----------------------------
 ENCODER_RESOLUTION_UM = 10    # micrometers per pulse
-MAX_DATA_POINTS = 1000        # Keep last N readings in memory
+MAX_DATA_POINTS = 2000        # Keep last N readings in memory
 DEFAULT_LOG_DIR = Path("logs") # NEW: folder to keep recordings
 DEFAULT_BASE_FILENAME = "sensor_data"  # NEW      
 
@@ -51,13 +51,22 @@ LOG_SAMPLING_HZ = 10          # NEW: logging rate while recording (10 Hz)
 MOTOR_SPEED = 0.1 # Default duty cycle of the motor
 MOTOR_DIR = -1 # Flip to make the motor go reverse
 
+# Motor control conf
+MOTOR_CONTROL_CYCLE = 0.1   # motor control period, in seconds
+MOTOR_SPEED_TARGET = 0.9    # How much encoder value jump on average per encoder cycle (1ms)
+MOTOR_VOLTAGE_OFFSET = 0.05 # Voltage tested to almost make it move
+
+# PID
+P_COEFF = 0.01
+I_COEFF = 0.01
+D_COEFF = 0.01
+
+I_LIMIT = 0.1
+
 ENCODER_PROTECTION_LIMIT = 3000 # Far limit for motor for tripping the protection
 ENCODER_SCAN_POSITION = 3000 # Where the encoder should be at when finishing a round of scan
 
 ACCEL_EMA_ALPHA = 0.5 # acceleration moving average smoother
-
-# Motor control conf
-MOTOR_CONTROL_CYCLE = 0.1   # motor control period, in seconds
 
 # -----------------------------
 FORWARD = 1 # away from encoder
@@ -80,12 +89,14 @@ class SensorDataLogger:
         self.rs232_outs: List[Optional[float]] = [None, None, None]  # NEW: OUT1..3
         self.encoder_attached = False
         self.last_update = time.time()
+        self.position_change = 0
 
         # History for plotting
         self.timestamps = deque(maxlen=MAX_DATA_POINTS)
         self.positions = deque(maxlen=MAX_DATA_POINTS)
         self.velocities = deque(maxlen=MAX_DATA_POINTS)
         self.rs232_values = deque(maxlen=MAX_DATA_POINTS)  # keep raw or e.g., OUT1
+        self.position_changes = deque(maxlen=MAX_DATA_POINTS)
 
         # need acceleration as well
         self.encoder_acceleration_mm_s_2 = 0.0
@@ -99,6 +110,7 @@ class SensorDataLogger:
 
         # Stored thread
         self.motor_control_thread = None
+        self.motor_control_stop_event = threading.Event()
 
     # ---------- Recording ----------
     def start_recording(self, base_filename: str):
@@ -111,7 +123,7 @@ class SensorDataLogger:
             self.log_file = open(self.current_log_path, 'a', newline='')
             # CSV header
             self.log_file.write(
-                "timestamp,encoder_position,encoder_velocity_mm_s,encoder_acceleration_mm_s_2,length_mm,"
+                "timestamp,encoder_position,encoder_velocity_mm_s,position_changes,encoder_acceleration_mm_s_2,length_mm,"
                 "rs232_out1,rs232_out2,rs232_out3,rs232_raw\n"
             )
             self.log_file.flush()
@@ -143,17 +155,18 @@ class SensorDataLogger:
             out2 = "" if self.rs232_outs[1] is None else self.rs232_outs[1]
             out3 = "" if self.rs232_outs[2] is None else self.rs232_outs[2]
             self.log_file.write(
-                f"{timestamp},{self.encoder_position},{self.encoder_velocity_mm_s:.6f},{self.encoder_acceleration_mm_s_2:.6f},{length_mm:.6f},"
+                f"{timestamp},{self.encoder_position},{self.encoder_velocity_mm_s:.6f},{self.position_change},{self.encoder_acceleration_mm_s_2:.6f},{length_mm:.6f},"
                 f"{out1},{out2},{out3},{self.rs232_raw}\n"
             )
             self.log_file.flush()
 
     # ---------- Updates ----------
-    def update_encoder(self, position, velocity_mm_s: float, time_change: float):
+    def update_encoder(self, position, velocity_mm_s: float,positionChange, time_change: float):
         """Thread-safe encoder update"""
         with self.lock:
             self.encoder_position = position
             self.encoder_velocity_mm_s = velocity_mm_s
+            self.position_change = positionChange
             self.last_update = time.time()
 
             # Calculate acceleration
@@ -171,6 +184,7 @@ class SensorDataLogger:
             length_mm = (position * ENCODER_RESOLUTION_UM) / 1000.0
             self.positions.append(length_mm)
             self.velocities.append(velocity_mm_s)
+            self.position_changes.append(self.position_change)
 
             # Add acceleration to history
             self.accelerations.append(self.encoder_acceleration_mm_s_2)
@@ -229,7 +243,7 @@ def on_encoder_position_change(self, positionChange, timeChange, indexTriggered)
     if timeChange > 0:
         velocity_mm_s = (positionChange * ENCODER_RESOLUTION_UM) / timeChange  # CHANGED (units fixed)
     position = self.getPosition()
-    logger.update_encoder(position, velocity_mm_s, timeChange)
+    logger.update_encoder(position, velocity_mm_s, positionChange, timeChange)
 
 def on_encoder_attach(self):
     logger.set_encoder_attached(True)
@@ -295,6 +309,9 @@ def set_motor_speed(speed):
     try:
         logger.motor.setTargetVelocity(speed_real)
         logger.motor_dir = speed_dir
+        # logging
+        with open('motor_log.txt', 'a') as file:
+            print(f"{time.time()},{speed_real}", file=file)
         return True
     except Exception as e:
         print('Motor set speed failed')
@@ -306,16 +323,58 @@ def motor_protection_thread():
             if (logger.encoder_position > ENCODER_PROTECTION_LIMIT and logger.motor_dir == FORWARD) or (logger.encoder_position <= 0 and logger.motor_dir == REVERSE):
                 print('Motor stop due to hitting limit')
                 try:
+                    if logger.motor_control_thread:
+                        logger.motor_control_stop_event.set()
+                        logger.motor_control_thread.join()
                     set_motor_speed(0)
                     print('Motor stop successfully')
                 except Exception as e:
                     print('Motor stop failed')
         time.sleep(0.1)
 
-def motor_speed_control_thread(stop_event):
-
+def motor_speed_control_thread(direction,stop_event):
+    last_time = time.time()
+    time.sleep(0.1)
+    i_sum = 0
+    last_e = 0
     while logger.running and not stop_event.is_set():
-        stop_event.wait(0.1)
+        current_time = time.time()
+        cnt = 0
+        total_pos_change = 0
+        # iterate over, find all data between two cycles, find speed
+        for i in range(len(logger.timestamps)-1, -1, -1):
+            if current_time > logger.timestamps[i]:
+                cnt+=1
+                total_pos_change += logger.position_change[i]
+            else:
+                break
+        speed = total_pos_change/cnt
+        # now we have speed, do a PID
+        e = direction * MOTOR_SPEED_TARGET - speed
+        p = P_COEFF * e
+        i = I_COEFF * i_sum
+        d = D_COEFF * (e-last_e)
+        offset = direction*MOTOR_VOLTAGE_OFFSET
+
+        voltage = p+i+d+offset
+        set_motor_speed(voltage)
+
+        # post process
+        last_e = e
+        i_sum += e
+        if abs(i_sum)>I_LIMIT:
+            i_sum = 0
+
+        # logging
+        with open('PID_log.csv', 'a') as file:
+            print(f"{current_time},{p},{i},{d},{offset},{voltage}", file=file)
+
+        last_time = time.time()
+        stop_event.wait(MOTOR_CONTROL_CYCLE)
+    
+    print('stopping thread')
+    set_motor_speed(0)
+
                 
 
 # -----------------------------
@@ -457,6 +516,8 @@ HTML_TEMPLATE = """
             <button onclick="motorForward()">Motor Forward</button>
             <button onclick="motorStop()">Motor Stop</button>
             <button onclick="motorReverse()">Motor Reverse</button>
+            <button onclick="motorForwardThread()">Motor Forward Thread</button>
+            <button onclick="motorReverseThread()">Motor Reverse Thread</button>
             <span class="muted" id="currentFile"></span>
         </div>
 
@@ -643,6 +704,28 @@ HTML_TEMPLATE = """
             }
         }
 
+        async function motorForwardThread() {
+            try {
+                const res = await fetch('/motor_forward_thread', { method: 'POST' });
+                const msg = await res.json();
+                console.log(msg.message);
+            } catch (e) {
+                alert("Failed to control motor. Is the server running?");
+                console.error(e);
+            }
+        }
+
+        async function motorReverseThread() {
+            try {
+                const res = await fetch('/motor_reverse_thread', { method: 'POST' });
+                const msg = await res.json();
+                console.log(msg.message);
+            } catch (e) {
+                alert("Failed to control motor. Is the server running?");
+                console.error(e);
+            }
+        }
+
     </script>
 </body>
 </html>
@@ -706,6 +789,9 @@ def motor_stop():
     if logger.motor:
         old_motor_dir = logger.motor_dir
         try:
+            if logger.motor_control_thread:
+                logger.motor_control_stop_event.set()
+                logger.motor_control_thread.join()
             set_motor_speed(0)
             return jsonify({'message': 'Motor stop successfully'})
         except Exception as e:
@@ -725,12 +811,40 @@ def motor_forward():
             return jsonify({'message': f'Motor run forward failed: {e}'}), 500
     return jsonify({'message': 'Motor not connected'}), 400
 
+@app.route('/motor_forward_thread', methods=['POST'])
+def motor_forward_thread():
+    if logger.motor:
+        try:
+            if logger.motor_control_thread:
+                logger.motor_control_stop_event.set()
+                logger.motor_control_thread.join()
+            logger.motor_control_thread = threading.Thread(target=motor_speed_control_thread, args=(FORWARD,logger.motor_control_stop_event))
+            return jsonify({'message': 'Motor run forward successfully'})
+        except Exception as e:
+            return jsonify({'message': f'Motor run forward failed: {e}'}), 500
+    return jsonify({'message': 'Thread started'}), 400
+
 @app.route('/motor_reverse', methods=['POST'])
 def motor_reverse():
     if logger.motor:
         old_motor_dir = logger.motor_dir
         try:
             set_motor_speed(-1*MOTOR_SPEED)
+            return jsonify({'message': 'Motor reverse successfully'})
+        except Exception as e:
+            logger.motor_dir = old_motor_dir
+            return jsonify({'message': f'Motor reverse failed: {e}'}), 500
+    return jsonify({'message': 'Motor not connected'}), 400
+
+@app.route('/motor_reverse_thread', methods=['POST'])
+def motor_reverse_thread():
+    if logger.motor:
+        old_motor_dir = logger.motor_dir
+        try:
+            if logger.motor_control_thread:
+                logger.motor_control_stop_event.set()
+                logger.motor_control_thread.join()
+            logger.motor_control_thread = threading.Thread(target=motor_speed_control_thread, args=(REVERSE,logger.motor_control_stop_event))
             return jsonify({'message': 'Motor reverse successfully'})
         except Exception as e:
             logger.motor_dir = old_motor_dir

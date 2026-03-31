@@ -966,3 +966,40 @@
 2026-03-31T16:00:55.683  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 1 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
 2026-03-31T16:00:55.684  <Info> phidget22[PhidgetUSBReadThreadFunction()] : HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357: ReadThread exiting normally (signaled by Phidget_close)
 2026-03-31T16:00:55.687  <Info> phidget22usb[PhidgetUSBCloseHandle()] : Closing USB Device: 0x7f8
+2026-03-31T16:12:00.583  <Info> phidget22 : 
+	******************************  Logging Enabled  ******************************
+	* Phidget22 - Version 1.24 - Built Jan 27 2026 11:04:38                       *
+	* Release 1.24.20260127 - Windows (x64)                                       *
+	*******************************************************************************
+2026-03-31T16:12:00.590  <Info> phidget22usb[AttachUSBDevice()] : Attaching Phidget | Path: \\?\usb#vid_06c2&pid_0046#765357#{ddc0b225-2263-4835-aa6e-55f8b77788fe} | PDO Name: \Device\USBPDO-8 | Hub Port: 2
+2026-03-31T16:12:00.591  <Info> phidget22[deviceAttach()] : (Attach) HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:00.591  <Info> phidget22[deviceAttach()] : (Attach) ENC1001 (Quadrature Encoder Phidget) v100 -> HUB0002 Port:0 S/N:765357
+2026-03-31T16:12:00.595  <Info> phidget22[deviceAttach()] : (Attach) DCC1000 (DC Motor Phidget) v220 -> HUB0002 Port:1 S/N:765357
+2026-03-31T16:12:00.642  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 0 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:00.642  <Info> phidget22[PhidgetUSBReadThreadFunction()] : HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357: USB read thread started: 0x000044fc
+2026-03-31T16:12:00.798  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 1 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:01.155  <Warn> phidget22[dispatchErrorNotify()] : Encoder Input Ch:0 -> ENC1001 -> HUB0002 Port:0 S/N:765357: Event queue is full; dropping event(s). Make sure data event handlers are fast and non-blocking, or reduce data rate.
+2026-03-31T16:12:01.156  <Warn> phidget22[dispatchErrorNotify()] : Encoder Input Ch:0 -> ENC1001 -> HUB0002 Port:0 S/N:765357: Event queue is full; dropping event(s). Make sure data event handlers are fast and non-blocking, or reduce data rate.
+2026-03-31T16:12:01.159  <Warn> phidget22[dispatchErrorNotify()] : Encoder Input Ch:0 -> ENC1001 -> HUB0002 Port:0 S/N:765357: Event queue is full; dropping event(s). Make sure data event handlers are fast and non-blocking, or reduce data rate.
+2026-03-31T16:12:01.161  <Warn> phidget22[dispatchErrorNotify()] : Encoder Input Ch:0 -> ENC1001 -> HUB0002 Port:0 S/N:765357: Event queue is full; dropping event(s). Make sure data event handlers are fast and non-blocking, or reduce data rate.
+2026-03-31T16:12:02.387         last message repeated 611 more times
+2026-03-31T16:12:02.387  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 0 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:02.396  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 1 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:02.396  <Info> phidget22[PhidgetUSBReadThreadFunction()] : HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357: ReadThread exiting normally (signaled by Phidget_close)
+2026-03-31T16:12:02.397  <Info> phidget22usb[PhidgetUSBCloseHandle()] : Closing USB Device: 0x7c0
+2026-03-31T16:12:17.708  <Info> phidget22 : 
+	******************************  Logging Enabled  ******************************
+	* Phidget22 - Version 1.24 - Built Jan 27 2026 11:04:38                       *
+	* Release 1.24.20260127 - Windows (x64)                                       *
+	*******************************************************************************
+2026-03-31T16:12:17.712  <Info> phidget22usb[AttachUSBDevice()] : Attaching Phidget | Path: \\?\usb#vid_06c2&pid_0046#765357#{ddc0b225-2263-4835-aa6e-55f8b77788fe} | PDO Name: \Device\USBPDO-8 | Hub Port: 2
+2026-03-31T16:12:17.716  <Info> phidget22[deviceAttach()] : (Attach) HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:17.717  <Info> phidget22[deviceAttach()] : (Attach) ENC1001 (Quadrature Encoder Phidget) v100 -> HUB0002 Port:0 S/N:765357
+2026-03-31T16:12:17.717  <Info> phidget22[deviceAttach()] : (Attach) DCC1000 (DC Motor Phidget) v220 -> HUB0002 Port:1 S/N:765357
+2026-03-31T16:12:17.728  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 0 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:12:17.728  <Info> phidget22[PhidgetUSBReadThreadFunction()] : HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357: USB read thread started: 0x00006ad0
+2026-03-31T16:12:17.768  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 1 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:47:06.171  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 0 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:47:06.186  <Info> phidget22vint[PhidgetHubDevice_setPortMode()] : Setting Port: 1 mode to VINT on HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357
+2026-03-31T16:47:06.186  <Info> phidget22[PhidgetUSBReadThreadFunction()] : HUB0002 (6-Port USB VINT Hub Phidget) v101 S/N:765357: ReadThread exiting normally (signaled by Phidget_close)
+2026-03-31T16:47:06.198  <Info> phidget22usb[PhidgetUSBCloseHandle()] : Closing USB Device: 0x794
