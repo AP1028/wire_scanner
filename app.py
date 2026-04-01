@@ -320,7 +320,10 @@ def set_motor_speed(speed):
 def motor_protection_thread():
     while logger.running:
         if logger.motor:
-            if (logger.encoder_position > ENCODER_PROTECTION_LIMIT and logger.motor_dir == FORWARD) or (logger.encoder_position <= 0 and logger.motor_dir == REVERSE):
+            with logger.lock:
+                pos = logger.encoder_position
+                direction = logger.motor_dir
+            if (pos > ENCODER_PROTECTION_LIMIT and direction == FORWARD) or (pos <= 0 and direction == REVERSE):
                 print('Motor stop due to hitting limit')
                 try:
                     if logger.motor_control_thread:
@@ -826,8 +829,8 @@ def motor_forward_thread():
             if logger.motor_control_thread:
                 logger.motor_control_stop_event.set()
                 logger.motor_control_thread.join()
+            logger.motor_control_stop_event = threading.Event()
             logger.motor_control_thread = threading.Thread(target=motor_speed_control_thread, args=(FORWARD,logger.motor_control_stop_event))
-            logger.motor_control_stop_event.clear()
             logger.motor_control_thread.start()
             return jsonify({'message': 'Motor run forward successfully'})
         except Exception as e:
@@ -854,8 +857,8 @@ def motor_reverse_thread():
             if logger.motor_control_thread:
                 logger.motor_control_stop_event.set()
                 logger.motor_control_thread.join()
+            logger.motor_control_stop_event = threading.Event()
             logger.motor_control_thread = threading.Thread(target=motor_speed_control_thread, args=(REVERSE,logger.motor_control_stop_event))
-            logger.motor_control_stop_event.clear()
             logger.motor_control_thread.start()
             return jsonify({'message': 'Motor reverse successfully'})
         except Exception as e:
