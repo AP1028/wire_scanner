@@ -424,7 +424,7 @@ def rs232_polling_thread():
         ser = serial.Serial(
             SERIAL_PORT,
             SERIAL_BAUD,
-            timeout=0.2,          # non-blocking-ish
+            timeout=0.001,          # non-blocking-ish
             write_timeout=0.2
         )
         logger.serial_port = ser
